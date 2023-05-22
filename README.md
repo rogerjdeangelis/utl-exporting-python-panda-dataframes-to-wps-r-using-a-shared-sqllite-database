@@ -1,2 +1,318 @@
 # utl-exporting-python-panda-dataframes-to-wps-r-using-a-shared-sqllite-database
  Binary exporting of python panda dataframes to wps r via using shared sqllite database  
+    %let pgm=utl-exporting-python-panda-dataframes-to-wps-r-using-a-shared-sqllite-database;
+
+    github
+    https://tinyurl.com/2rn9fyt7
+    https://github.com/rogerjdeangelis/utl-exporting-python-panda-dataframes-to-wps-r-using-a-shared-sqllite-database
+
+      Binary exporting of python panda dataframes to wps r via using shared sqllite database
+
+      We load a panda dataframe into a binary sqllite database table then we create
+      a R dataframe by selecting the table out of the shared sqllite database previoulsly created by python.
+
+        Solution (folder c:/temp must exist before executing the python/R code)
+
+            1. Python:  Create sqllite database
+            2. Python:: create the sample panda dataframe, 'seizure'
+            3. Python:  Drop table 'seizure' if it exists in the sqllite database(will no be present on first run)
+            4. Python:  Create table 'seizure' in the sqllite datbase (note the database is just one binary file)
+            5. Python:  Describe table so we can see data structure, types, lengths and indexes
+
+            6. R     :  Connect to sqllite database
+            7. R     :  Create R dataframe seizure (select * from seizure, from connection)
+
+            8. WPS   : Download and configure free sqllite ODBC driver
+                       https://tinyurl.com/4m4r8rve
+                       https://docs.devart.com/odbc/sqlite/windows_connect.htm
+                       libname sqlite odbc complete = "dsn=sqLite_x64;
+                         Driver={SQLite3 ODBC Driver}; Database=C:\temp\xport.db";
+               WPS   : data wrk.seizure;
+                         set sqlite.seizure;
+                       run;quit;
+
+    SOAPBOX ON
+
+    I rather not use csv files.
+    Matains type and length, indexes ...
+
+    I like this better than using reticulate because panda sqllite dataframes
+    do not have all the baggage of the myriad python data structures and python typing.
+    Bringing up a virtual python inside R just to convert a panda dataframe seems a little much?
+    I suspect you need this to de-complexify python data stuctures.
+
+    Once you have the R dataframes the sqldf R package has a very intuitive interface and
+    works easily with R dtatframes. You do not have to create a sqllite database. I also
+    eliminates cursor processing and keeps all objects in rh R dataframe structures.
+
+    SOAPBOX OFF
+
+    /*                 _       _         __                            _                   _
+     _ __  _   _    __| | __ _| |_ __ _ / _|_ __ __ _ _ __ ___   ___  (_)_ __  _ __  _   _| |_
+    | `_ \| | | |  / _` |/ _` | __/ _` | |_| `__/ _` | `_ ` _ \ / _ \ | | `_ \| `_ \| | | | __|
+    | |_) | |_| | | (_| | (_| | || (_| |  _| | | (_| | | | | | |  __/ | | | | | |_) | |_| | |_
+    | .__/ \__, |  \__,_|\__,_|\__\__,_|_| |_|  \__,_|_| |_| |_|\___| |_|_| |_| .__/ \__,_|\__|
+    |_|    |___/                                                              |_|
+    */
+
+    /**************************************************************************************************************************/
+    /*                                                                                                                        */
+    /* PYTHON SEIZSURE PANDA DATA FRAME                                                                                       */
+    /*                                                                                                                        */
+    /*  <class 'pandas.core.frame.DataFrame'>                                                                                 */
+    /*  Int64Index: 59 entries, 1 to 59                                                                                       */
+    /*  Data columns (total 7 columns):                                                                                       */
+    /*   #   Column  Non-Null Count  Dtype                                                                                    */
+    /*  ---  ------  --------------  -----                                                                                    */
+    /*   0   y1      59 non-null     int64                                                                                    */
+    /*   1   y2      59 non-null     int64                                                                                    */
+    /*   2   y3      59 non-null     int64                                                                                    */
+    /*   3   y4      59 non-null     int64                                                                                    */
+    /*   4   trt     59 non-null     int64                                                                                    */
+    /*   5   base    59 non-null     int64                                                                                    */
+    /*   6   age     59 non-null     int64                                                                                    */
+    /*  dtypes: int64(7)                                                                                                      */
+    /*  memory usage: 3.7 KB                                                                                                  */
+    /*                                                                                                                        */
+    /*                                                                                                                        */
+    /*       y1  y2  y3  y4  trt  base  age                                                                                   */
+    /*  1     5   3   3   3    0    11   31                                                                                   */
+    /*  2     3   5   3   3    0    11   30                                                                                   */
+    /*  3     2   4   0   5    0     6   25                                                                                   */
+    /*  4     4   4   1   4    0     8   36                                                                                   */
+    /*  5     7  18   9  21    0    66   22                                                                                   */
+    /*  6     5   2   8   7    0    27   29                                                                                   */
+    /*  7     6   4   0   2    0    12   31                                                                                   */
+    /*  8    40  20  23  12    0    52   42                                                                                   */
+    /*  9     5   6   6   5    0    23   37                                                                                   */
+    /*  10   14  13   6   0    0    10   28                                                                                   */
+    /*  11   26  12   6  22    0    52   36                                                                                   */
+    /*  12   12   6   8   5    0    33   24                                                                                   */
+    /*  13    4   4   6   2    0    18   23                                                                                   */
+    /*  ....                                                                                                                  */
+    /**************************************************************************************************************************/
+
+    /*                       _ _ _ _         _        _     _
+     _ __  _   _   ___  __ _| | (_) |_ ___  | |_ __ _| |__ | | ___
+    | `_ \| | | | / __|/ _` | | | | __/ _ \ | __/ _` | `_ \| |/ _ \
+    | |_) | |_| | \__ \ (_| | | | | ||  __/ | || (_| | |_) | |  __/
+    | .__/ \__, | |___/\__, |_|_|_|\__\___|  \__\__,_|_.__/|_|\___|
+    |_|    |___/          |_|
+    */
+
+
+    /**************************************************************************************************************************/
+    /*                                                                                                                        */
+    /* DATABASE:  c:/temp/xport.db  TABLE seizure                                                                             */
+    /*                                                                                                                        */
+    /* SQLITE TABLE DESCRIPTION                                                                                               */
+    /*                                                                                                                        */
+    /*     TABLE seizure                                                                                                      */
+    /*       (                                                                                                                */
+    /*      index  INTEGER                                                                                                    */
+    /*        ,y1  INTEGER                                                                                                    */
+    /*        ,y2  INTEGER                                                                                                    */
+    /*        ,y3  INTEGER                                                                                                    */
+    /*        ,y4  INTEGER                                                                                                    */
+    /*        ,trt INTEGER,                                                                                                   */
+    /*        ,base INTEGER                                                                                                   */
+    /*        ,age INTEGER)'),                                                                                                */
+    /*        ('index'                                                                                                        */
+    /*          ,ix_seizure_index                                                                                             */
+    /*          ,'seizure'                                                                                                    */
+    /*          ,3                                                                                                            */
+    /*          ,'                                                                                                            */
+    /*      CREATE                                                                                                            */
+    /*          INDEX ix_seizure_index                                                                                        */
+    /*      ON                                                                                                                */
+    /*          seizure (index)                                                                                               */
+    /*        )                                                                                                               */
+    /*                                                                                                                        */
+    /**************************************************************************************************************************/
+
+    /*           _   _
+     _ __  _   _| |_| |__   ___  _ __    _ __  _ __ ___   ___ ___  ___ ___
+    | `_ \| | | | __| `_ \ / _ \| `_ \  | `_ \| `__/ _ \ / __/ _ \/ __/ __|
+    | |_) | |_| | |_| | | | (_) | | | | | |_) | | | (_) | (_|  __/\__ \__ \
+    | .__/ \__, |\__|_| |_|\___/|_| |_| | .__/|_|  \___/ \___\___||___/___/
+    |_|    |___/                        |_|
+    */
+
+
+    /*---- create sqllite database repository for transport files ----*/
+    %utl_submit_py64_310('
+    import sqlite3;
+    database = "c:/temp/xport.db";
+    conn = sqlite3.connect(database);
+    conn.close();
+    ');
+
+    /*---- create table seizure in sqlite database ----*/
+    %utl_submit_py64_310('
+    import sqlite3;
+    import pandas as pd;
+    from pydataset import data;
+    seizure=data("seizure");
+    seizure.info();
+    database = "c:/temp/xport.db";
+    mydb = sqlite3.connect(database);
+    cur = mydb.cursor();
+    cur.execute("drop table if exists seizure");
+    seizure.to_sql(name="seizure", con=mydb);
+    seiz=pd.read_sql_query("""select * from seizure""",mydb);
+    print("seiz",seiz);
+    cur.execute("select * from sqlite_master");
+    print(cur.fetchall());
+    mydb.close();
+    ');
+
+    /*      _                   _                               _               _
+     _ __  (_)_ __  _ __  _   _| |_   _ __  _   _    ___  _   _| |_ _ __  _   _| |_
+    | `__| | | `_ \| `_ \| | | | __| | `_ \| | | |  / _ \| | | | __| `_ \| | | | __|
+    | |    | | | | | |_) | |_| | |_  | |_) | |_| | | (_) | |_| | |_| |_) | |_| | |_
+    |_|    |_|_| |_| .__/ \__,_|\__| | .__/ \__, |  \___/ \__,_|\__| .__/ \__,_|\__|
+                   |_|               |_|    |___/
+    */
+
+    /**************************************************************************************************************************/
+    /*                                                                                                                        */
+    /* DATABASE:  c:/temp/xport.db  TABLE seizure                                                                             */
+    /*                                                                                                                        */
+    /*                                                                                                                        */
+    /* SQLITE TABLE DESCRIPTION                                                                                               */
+    /*                                                                                                                        */
+    /*     TABLE seizure                                                                                                      */
+    /*       (                                                                                                                */
+    /*      index  INTEGER                                                                                                    */
+    /*        ,y1  INTEGER                                                                                                    */
+    /*        ,y2  INTEGER                                                                                                    */
+    /*        ,y3  INTEGER                                                                                                    */
+    /*        ,y4  INTEGER                                                                                                    */
+    /*        ,trt INTEGER,                                                                                                   */
+    /*        ,base INTEGER                                                                                                   */
+    /*        ,age INTEGER)'),                                                                                                */
+    /*        ('index'                                                                                                        */
+    /*          ,ix_seizure_index                                                                                             */
+    /*          ,'seizure'                                                                                                    */
+    /*          ,3                                                                                                            */
+    /*          ,'                                                                                                            */
+    /*      CREATE                                                                                                            */
+    /*          INDEX ix_seizure_index                                                                                        */
+    /*      ON                                                                                                                */
+    /*          seizure (index)                                                                                               */
+    /*        )                                                                                                               */
+    /*                                                                                                                        */
+    /**************************************************************************************************************************/
+
+    /*                  _               _
+     _ __    ___  _   _| |_ _ __  _   _| |_
+    | `__|  / _ \| | | | __| `_ \| | | | __|
+    | |    | (_) | |_| | |_| |_) | |_| | |_
+    |_|     \___/ \__,_|\__| .__/ \__,_|\__|
+                           |_|
+    */
+    /**************************************************************************************************************************/
+    /*                                                                                                                        */
+    /* R dataframe seizure                                                                                                    */
+    /*                                                                                                                        */
+    /*   data,frame 59 obs 8 variables                                                                                        */
+    /*   $ index: int  1 2 3 4 5 6 7 8 9 10 ...                                                                               */
+    /*   $ y1   : int  5 3 2 4 7 5 6 40 5 14 ...                                                                              */
+    /*   $ y2   : int  3 5 4 4 18 2 4 20 6 13 ...                                                                             */
+    /*   $ y3   : int  3 3 0 1 9 8 0 23 6 6 ...                                                                               */
+    /*   $ y4   : int  3 3 5 4 21 7 2 12 5 0 ...                                                                              */
+    /*   $ trt  : int  0 0 0 0 0 0 0 0 0 0 ...                                                                                */
+    /*   $ base : int  11 11 6 8 66 27 12 52 23 10 ...                                                                        */
+    /*   $ age  : int  31 30 25 36 22 29 31 42 37 28 ...                                                                      */
+    /*                                                                                                                        */
+    /*                                                                                                                        */
+    /*     index y1 y2 y3 y4 trt base age                                                                                     */
+    /*   1     1  5  3  3  3   0   11  31                                                                                     */
+    /*   2     2  3  5  3  3   0   11  30                                                                                     */
+    /*   3     3  2  4  0  5   0    6  25                                                                                     */
+    /*   4     4  4  4  1  4   0    8  36                                                                                     */
+    /*   5     5  7 18  9 21   0   66  22                                                                                     */
+    /*   6     6  5  2  8  7   0   27  29                                                                                     */
+    /*   ....                                                                                                                 */
+    /*                                                                                                                        */
+    /**************************************************************************************************************************/
+
+    /*          _       _         __                             __                                 _ _ _
+     _ __    __| | __ _| |_ __ _ / _|_ __ __ _ _ __ ___   ___   / _|_ __ ___  _ __ ___    ___  __ _| (_) |_ ___
+    | `__|  / _` |/ _` | __/ _` | |_| `__/ _` | `_ ` _ \ / _ \ | |_| `__/ _ \| `_ ` _ \  / __|/ _` | | | __/ _ \
+    | |    | (_| | (_| | || (_| |  _| | | (_| | | | | | |  __/ |  _| | | (_) | | | | | | \__ \ (_| | | | ||  __/
+    |_|     \__,_|\__,_|\__\__,_|_| |_|  \__,_|_| |_| |_|\___| |_| |_|  \___/|_| |_| |_| |___/\__, |_|_|\__\___|
+                                                                                                 |_|
+    */
+
+    %utl_submit_r64('
+    library(RSQLite);
+    library(DBI);
+    library(sqldf);
+    mydb <- dbConnect(RSQLite::SQLite(), "c:/temp/xport.db");
+    as.data.frame(dbListTables(mydb));
+    seizure<-dbGetQuery(mydb, "SELECT * FROM seizure");
+    str(seizure);
+    head(seizure);
+    ');
+
+    /*                        _       _         __
+    __      ___ __  ___    __| | __ _| |_ __ _ / _|_ __ __ _ _ __ ___   ___
+    \ \ /\ / / `_ \/ __|  / _` |/ _` | __/ _` | |_| `__/ _` | `_ ` _ \ / _ \
+     \ V  V /| |_) \__ \ | (_| | (_| | || (_| |  _| | | (_| | | | | | |  __/
+      \_/\_/ | .__/|___/  \__,_|\__,_|\__\__,_|_| |_|  \__,_|_| |_| |_|\___|
+             |_|
+     ____                        _       _                 _
+    |___ \   ___  __ _ ___    __| | __ _| |_ __ _ ___  ___| |_
+      __) | / __|/ _` / __|  / _` |/ _` | __/ _` / __|/ _ \ __|
+     / __/  \__ \ (_| \__ \ | (_| | (_| | || (_| \__ \  __/ |_
+    |_____| |___/\__,_|___/  \__,_|\__,_|\__\__,_|___/\___|\__|
+
+    */
+
+    /*--- no need for SAS Accesss
+
+    %let _pth=%sysfunc(pathname(work));
+    %utl_submit_wps64('
+    libname wrk "&_pth";
+    libname sqlite odbc complete = "dsn=sqLite_x64;
+                                    Driver={SQLite3 ODBC Driver};
+                                    Database=C:\temp\xport.db";
+    data wrk.seizure;
+      set sqlite.seizure;
+    run;quit;
+
+    ');
+
+    proc print data=seizure;
+    run;quit;
+
+    /**************************************************************************************************************************/
+    /*                                                                                                                        */
+    /*  Up to 40 obs from SEIZURE total obs=59 22MAY2023:12:59:34                                                             */
+    /*                                                                                                                        */
+    /*  Obs    INDEX    Y1    Y2    Y3    Y4    TRT    BASE    AGE                                                            */
+    /*                                                                                                                        */
+    /*    1       1      5     3     3     3     0       11     31                                                            */
+    /*    2       2      3     5     3     3     0       11     30                                                            */
+    /*    3       3      2     4     0     5     0        6     25                                                            */
+    /*    4       4      4     4     1     4     0        8     36                                                            */
+    /*    5       5      7    18     9    21     0       66     22                                                            */
+    /*    6       6      5     2     8     7     0       27     29                                                            */
+    /*    7       7      6     4     0     2     0       12     31                                                            */
+    /*    8       8     40    20    23    12     0       52     42                                                            */
+    /*    9       9      5     6     6     5     0       23     37                                                            */
+    /*   10      10     14    13     6     0     0       10     28                                                            */
+    /*   11      11     26    12     6    22     0       52     36                                                            */
+    /*   12      12     12     6     8     5     0       33     24                                                            */
+    /*   13      13      4     4     6     2     0       18     23                                                            */
+    /*                                                                                                                        */
+    /**************************************************************************************************************************/
+
+    /*              _
+      ___ _ __   __| |
+     / _ \ `_ \ / _` |
+    |  __/ | | | (_| |
+     \___|_| |_|\__,_|
+
+    */
